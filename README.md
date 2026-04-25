@@ -229,24 +229,26 @@ systemctl --user restart indigo-poly-market.service
 
 Supported commands (from your configured `telegram_chat_id` only):
 
-- `/help` or `/start` → list commands
-- `/status` → dry-run, wallets count, positions count
-- `/dryrun on` or `/dryrun off` → toggle dry-run and persist in `config.yaml`
-- `/bets` → show all active bets
-- `/buy <market_slug> <Yes|No> <amount_usdc>` → place buy
-- `/sell <market_slug> <Yes|No> <amount_usdc>` → place sell/reduce
-- `/exit <market_slug> [Yes|No]` → exit position
-- `/setkey <0xPRIVATEKEY>` → save private key in `.env` and apply live in memory
+- `/indigo_help` or `/indigo_start` → list commands
+- `/indigo_status` → dry-run, wallets count, positions count
+- `/indigo_dryrun on` or `/indigo_dryrun off` → toggle dry-run and persist in `config.yaml`
+- `/indigo_bets` → show all active bets
+- `/indigo_buy <market_slug> <Yes|No> <amount_usdc>` → place buy
+- `/indigo_sell <market_slug> <Yes|No> <amount_usdc>` → place sell/reduce
+- `/indigo_exit <market_slug> [Yes|No]` → exit position
+- `/indigo_setkey <0xPRIVATEKEY>` → save private key in `.env`, then auto-restart service
+- `/indigo_service start|stop|restart|status` → control service lifecycle
 
 Example:
 
 ```text
-/dryrun on
-/bets
-/buy will-trump-win-2028 Yes 25
-/sell will-trump-win-2028 Yes 10
-/exit will-trump-win-2028 Yes
-/setkey 0xabc123...
+/indigo_dryrun on
+/indigo_bets
+/indigo_buy will-trump-win-2028 Yes 25
+/indigo_sell will-trump-win-2028 Yes 10
+/indigo_exit will-trump-win-2028 Yes
+/indigo_setkey 0xabc123...
+/indigo_service status
 ```
 
 Security notes:

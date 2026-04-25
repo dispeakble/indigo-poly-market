@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-import time
+import subprocess
 from dataclasses import dataclass
 from typing import Any
 
@@ -98,9 +98,9 @@ class TelegramController:
 
     def _handle_command(self, cmd: ParsedCommand) -> str:
         try:
-            if cmd.name in {'help', 'start'}:
+            if cmd.name in {'indigo_help', 'indigo_start'}:
                 return self._help_text()
-            if cmd.name == 'status':
+            if cmd.name == 'indigo_status':
                 st = self.state.get_state()
                 return (
                     f"Indigo status\n"
@@ -108,19 +108,21 @@ class TelegramController:
                     f"wallets={len(st.copied_wallets)}\n"
                     f"positions={len(st.copied_positions)}"
                 )
-            if cmd.name == 'dryrun':
+            if cmd.name == 'indigo_dryrun':
                 return self._cmd_dryrun(cmd.args)
-            if cmd.name == 'bets':
+            if cmd.name == 'indigo_bets':
                 return self._cmd_bets()
-            if cmd.name == 'buy':
+            if cmd.name == 'indigo_buy':
                 return self._cmd_trade('buy', cmd.args)
-            if cmd.name == 'sell':
+            if cmd.name == 'indigo_sell':
                 return self._cmd_trade('sell', cmd.args)
-            if cmd.name == 'exit':
+            if cmd.name == 'indigo_exit':
                 return self._cmd_exit(cmd.args)
-            if cmd.name == 'setkey':
+            if cmd.name == 'indigo_setkey':
                 return self._cmd_setkey(cmd.args)
-            return 'Unknown command. Use /help'
+            if cmd.name == 'indigo_service':
+                return self._cmd_service(cmd.args)
+            return 'Unknown command. Use /indigo_help'
         except Exception as exc:  # noqa: BLE001
             logger.exception('Command failed: %s', exc)
             return f'Command error: {exc}'
@@ -128,18 +130,20 @@ class TelegramController:
     def _help_text(self) -> str:
         return (
             'Indigo commands:\n'
-            '/status\n'
-            '/dryrun on|off\n'
-            '/bets\n'
-            '/buy <market_slug> <Yes|No> <amount_usdc>\n'
-            '/sell <market_slug> <Yes|No> <amount_usdc>\n'
-            '/exit <market_slug> [Yes|No]\n'
-            '/setkey <0xPRIVATEKEY>'
+            '/indigo_help\n'
+            '/indigo_status\n'
+            '/indigo_dryrun on|off\n'
+            '/indigo_bets\n'
+            '/indigo_buy <market_slug> <Yes|No> <amount_usdc>\n'
+            '/indigo_sell <market_slug> <Yes|No> <amount_usdc>\n'
+            '/indigo_exit <market_slug> [Yes|No]\n'
+            '/indigo_setkey <0xPRIVATEKEY>\n'
+            '/indigo_service start|stop|restart|status'
         )
 
     def _cmd_dryrun(self, args: list[str]) -> str:
         if not args or args[0].lower() not in {'on', 'off'}:
-            return 'Usage: /dryrun on|off'
+            return 'Usage: /indigo_dryrun on|off'
         value = args[0].lower() == 'on'
         self.trader.set_dry_run(value)
         self.copy_trader.config.dry_run = value
@@ -159,7 +163,7 @@ class TelegramController:
 
     def _cmd_trade(self, action: str, args: list[str]) -> str:
         if len(args) < 3:
-            return f'Usage: /{action} <market_slug> <Yes|No> <amount_usdc>'
+            return f'Usage: /indigo_{action} <market_slug> <Yes|No> <amount_usdc>'
         market_slug = args[0]
         outcome = args[1]
         amount = float(args[2])
@@ -168,7 +172,7 @@ class TelegramController:
 
     def _cmd_exit(self, args: list[str]) -> str:
         if len(args) < 1:
-            return 'Usage: /exit <market_slug> [Yes|No]'
+            return 'Usage: /indigo_exit <market_slug> [Yes|No]'
         market_slug = args[0]
         outcome = args[1] if len(args) > 1 else 'Yes'
         res = self.copy_trader.manual_trade('exit', market_slug, outcome, 0.0)
@@ -176,9 +180,41 @@ class TelegramController:
 
     def _cmd_setkey(self, args: list[str]) -> str:
         if len(args) != 1 or not args[0].startswith('0x'):
-            return 'Usage: /setkey <0xPRIVATEKEY>'
+            return 'Usage: /indigo_setkey <0xPRIVATEKEY>'
         key = args[0].strip()
         save_private_key_to_env(key, self.env_path)
         self.trader.set_private_key(key)
         self.config.polymarket_private_key = key
-        return f'private key updated: {mask_key(key)}'
+        # Auto-restart so whole process (including schedulers) picks up env/config cleanly.
+        self._service_control('restart')
+        return f'private key updated: {mask_key(key)}; service restarting...'
+
+    def _cmd_service(self, args: list[str]) -> str:
+        if not args:
+            return 'Usage: /indigo_service start|stop|restart|status'
+        action = args[0].lower()
+        if action not in {'start', 'stop', 'restart', 'status'}:
+            return 'Usage: /indigo_service start|stop|restart|status'
+        return self._service_control(action)
+
+    def _service_control(self, action: str) -> str:
+        if action == 'status':
+            res = subprocess.run(
+                ['systemctl', '--user', 'is-active', 'indigo-poly-market.service'],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            status = (res.stdout or res.stderr).strip() or 'unknown'
+            return f'service status: {status}'
+
+        res = subprocess.run(
+            ['systemctl', '--user', action, 'indigo-poly-market.service'],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode == 0:
+            return f'service {action}: ok'
+        err = (res.stderr or res.stdout).strip()
+        return f'service {action}: failed - {err}'

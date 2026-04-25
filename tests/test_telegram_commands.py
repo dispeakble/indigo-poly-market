@@ -11,24 +11,24 @@ from src.runtime_control import mask_key
 from src.telegram_control import parse_command_text
 
 
-def test_parse_dryrun_on() -> None:
-    cmd = parse_command_text('/dryrun on')
+def test_parse_indigo_dryrun_on() -> None:
+    cmd = parse_command_text('/indigo_dryrun on')
     assert cmd is not None
-    assert cmd.name == 'dryrun'
+    assert cmd.name == 'indigo_dryrun'
     assert cmd.args == ['on']
 
 
-def test_parse_buy_command() -> None:
-    cmd = parse_command_text('/buy will-trump-win-2028 Yes 50')
+def test_parse_indigo_buy_command() -> None:
+    cmd = parse_command_text('/indigo_buy will-trump-win-2028 Yes 50')
     assert cmd is not None
-    assert cmd.name == 'buy'
+    assert cmd.name == 'indigo_buy'
     assert cmd.args == ['will-trump-win-2028', 'Yes', '50']
 
 
-def test_parse_exit_command() -> None:
-    cmd = parse_command_text('/exit will-trump-win-2028 No')
+def test_parse_indigo_exit_command() -> None:
+    cmd = parse_command_text('/indigo_exit will-trump-win-2028 No')
     assert cmd is not None
-    assert cmd.name == 'exit'
+    assert cmd.name == 'indigo_exit'
     assert cmd.args == ['will-trump-win-2028', 'No']
 
 
