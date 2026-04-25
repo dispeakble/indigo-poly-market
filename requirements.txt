@@ -1,0 +1,11 @@
+py-clob-client
+requests
+pydantic
+httpx
+python-dotenv
+PyYAML
+APScheduler
+web3
+rich
+fastapi
+uvicorn

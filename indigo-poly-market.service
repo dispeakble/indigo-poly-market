@@ -1,0 +1,18 @@
+[Unit]
+Description=Indigo Poly Market Copy Trading Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=i
+WorkingDirectory=/home/i/sources/polymarket/indigo-poly-market
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/i/sources/polymarket/indigo-poly-market/.venv/bin/python /home/i/sources/polymarket/indigo-poly-market/main.py --config /home/i/sources/polymarket/indigo-poly-market/config.yaml --live
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

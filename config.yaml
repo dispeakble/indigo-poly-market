@@ -1,0 +1,24 @@
+# Indigo Poly Market runtime configuration
+# Sensitive values should come from .env and not be committed.
+
+polymarket_private_key: "${POLYMARKET_PRIVATE_KEY}"
+
+# Copy-trading strategy
+auto_top_n: 10
+bet_mode: "fixed"           # fixed | percentage
+bet_value: 25.0             # fixed USDC amount OR percentage amount
+max_bet_usdc: 200.0
+poll_interval_minutes: 3
+dry_run: true
+
+# Alerting
+telegram_enabled: false
+telegram_bot_token: "${TELEGRAM_BOT_TOKEN}"
+telegram_chat_id: "${TELEGRAM_CHAT_ID}"
+hermes_webhook_url: ""
+
+# Embedded control API
+api_enabled: true
+api_host: "0.0.0.0"
+api_port: 8000
+api_key: "${INDIGO_API_KEY}"
