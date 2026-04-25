@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import uvicorn
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -19,6 +20,7 @@ from src.copy_logic import CopyTrader
 from src.data_api import PolymarketDataAPI
 from src.polymarket_client import PolymarketClient
 from src.state_manager import StateManager
+from src.telegram_control import TelegramController
 
 console = Console()
 
@@ -45,6 +47,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Indigo Poly Market copy-trading bot")
     parser.add_argument("--config", default="config.yaml", help="Path to config YAML")
     parser.add_argument("--live", action="store_true", help="Render periodic live rich table")
+    parser.add_argument(
+        "--env-file",
+        default=".env",
+        help="Path to env file for runtime key updates via Telegram commands",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -53,6 +60,14 @@ def main() -> None:
     data_api = PolymarketDataAPI()
     trader = PolymarketClient(private_key=config.polymarket_private_key, dry_run=config.dry_run)
     copy_trader = CopyTrader(config, state, data_api, trader, alerts)
+    telegram_ctl = TelegramController(
+        config=config,
+        state=state,
+        copy_trader=copy_trader,
+        trader=trader,
+        config_path=str(Path(args.config).resolve()),
+        env_path=str(Path(args.env_file).resolve()),
+    )
 
     scheduler = BackgroundScheduler()
 
@@ -64,6 +79,11 @@ def main() -> None:
             console.print("[yellow]Poll completed[/yellow] with no deltas")
 
     scheduler.add_job(poll_job, "interval", minutes=config.poll_interval_minutes, max_instances=1)
+
+    def telegram_job() -> None:
+        telegram_ctl.poll_once()
+
+    scheduler.add_job(telegram_job, "interval", seconds=2, max_instances=1)
     scheduler.start()
 
     stop_event = threading.Event()

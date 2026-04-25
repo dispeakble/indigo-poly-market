@@ -25,11 +25,12 @@ curl -s "$INDIGO_BASE_URL/status" \
   -H "X-API-Key: $INDIGO_API_KEY"
 ```
 
-### 2) Indigo positions
+### 2) Indigo positions / bets
 
 User phrase examples:
 - "Indigo positions"
 - "Show current copied bets"
+- "Indigo bets"
 
 Action:
 

@@ -211,6 +211,52 @@ uvicorn src.api:app --reload --host 0.0.0.0 --port 8000
 
 ---
 
+## Telegram bot commands
+
+Enable Telegram in `config.yaml`:
+
+```yaml
+telegram_enabled: true
+telegram_bot_token: "${TELEGRAM_BOT_TOKEN}"
+telegram_chat_id: "${TELEGRAM_CHAT_ID}"
+```
+
+Then restart service:
+
+```bash
+systemctl --user restart indigo-poly-market.service
+```
+
+Supported commands (from your configured `telegram_chat_id` only):
+
+- `/help` or `/start` → list commands
+- `/status` → dry-run, wallets count, positions count
+- `/dryrun on` or `/dryrun off` → toggle dry-run and persist in `config.yaml`
+- `/bets` → show all active bets
+- `/buy <market_slug> <Yes|No> <amount_usdc>` → place buy
+- `/sell <market_slug> <Yes|No> <amount_usdc>` → place sell/reduce
+- `/exit <market_slug> [Yes|No]` → exit position
+- `/setkey <0xPRIVATEKEY>` → save private key in `.env` and apply live in memory
+
+Example:
+
+```text
+/dryrun on
+/bets
+/buy will-trump-win-2028 Yes 25
+/sell will-trump-win-2028 Yes 10
+/exit will-trump-win-2028 Yes
+/setkey 0xabc123...
+```
+
+Security notes:
+
+- Keep bot in a private chat.
+- Only messages from configured `telegram_chat_id` are accepted.
+- `/setkey` updates `.env`; keep `.env` private and never commit it.
+
+---
+
 ## Hermes integration
 
 Use `sample_hermes_skill.md` to add Indigo controls into Hermes Agent.

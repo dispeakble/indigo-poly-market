@@ -19,11 +19,23 @@ class PolymarketClient:
         self.chain_id = chain_id
         self.client = ClobClient("https://clob.polymarket.com", key=private_key, chain_id=chain_id)
         self.address = Web3().eth.account.from_key(private_key).address
+        self._ensure_auth()
 
+    def _ensure_auth(self) -> None:
         # Level-2 auth required for balances + posting orders.
         if not self.dry_run:
             creds = self.client.create_or_derive_api_creds()
             self.client.set_api_creds(creds)
+
+    def set_dry_run(self, dry_run: bool) -> None:
+        self.dry_run = dry_run
+        self._ensure_auth()
+
+    def set_private_key(self, private_key: str) -> None:
+        self.private_key = private_key
+        self.client = ClobClient("https://clob.polymarket.com", key=private_key, chain_id=self.chain_id)
+        self.address = Web3().eth.account.from_key(private_key).address
+        self._ensure_auth()
 
     def _lookup_token_id(self, market_slug: str, outcome: str) -> str:
         market_resp = requests.get(

@@ -1,0 +1,184 @@
+from __future__ import annotations
+
+import logging
+import time
+from dataclasses import dataclass
+from typing import Any
+
+import requests
+
+from .config import IndigoConfig
+from .copy_logic import CopyTrader
+from .polymarket_client import PolymarketClient
+from .runtime_control import mask_key, save_private_key_to_env, set_dry_run_mode
+from .state_manager import StateManager
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class ParsedCommand:
+    name: str
+    args: list[str]
+
+
+def parse_command_text(text: str) -> ParsedCommand | None:
+    if not text:
+        return None
+    text = text.strip()
+    if not text.startswith('/'):
+        return None
+    parts = text.split()
+    name = parts[0][1:].split('@')[0].lower()
+    args = parts[1:]
+    return ParsedCommand(name=name, args=args)
+
+
+class TelegramController:
+    def __init__(
+        self,
+        config: IndigoConfig,
+        state: StateManager,
+        copy_trader: CopyTrader,
+        trader: PolymarketClient,
+        config_path: str = 'config.yaml',
+        env_path: str = '.env',
+    ) -> None:
+        self.config = config
+        self.state = state
+        self.copy_trader = copy_trader
+        self.trader = trader
+        self.config_path = config_path
+        self.env_path = env_path
+        self.enabled = bool(config.telegram_enabled and config.telegram_bot_token and config.telegram_chat_id)
+        self._offset: int | None = None
+
+    def poll_once(self) -> None:
+        if not self.enabled:
+            return
+        updates = self._get_updates()
+        for upd in updates:
+            self._offset = upd['update_id'] + 1
+            msg = upd.get('message') or {}
+            text = msg.get('text', '')
+            chat_id = str(msg.get('chat', {}).get('id', ''))
+            if str(self.config.telegram_chat_id) != chat_id:
+                continue
+            parsed = parse_command_text(text)
+            if not parsed:
+                continue
+            response = self._handle_command(parsed)
+            self._send_message(response)
+
+    def _api_url(self, method: str) -> str:
+        return f"https://api.telegram.org/bot{self.config.telegram_bot_token}/{method}"
+
+    def _get_updates(self) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {'timeout': 0}
+        if self._offset is not None:
+            params['offset'] = self._offset
+        try:
+            resp = requests.get(self._api_url('getUpdates'), params=params, timeout=20)
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get('result', [])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('Telegram getUpdates failed: %s', exc)
+            return []
+
+    def _send_message(self, text: str) -> None:
+        try:
+            requests.post(
+                self._api_url('sendMessage'),
+                json={'chat_id': self.config.telegram_chat_id, 'text': text},
+                timeout=20,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('Telegram sendMessage failed: %s', exc)
+
+    def _handle_command(self, cmd: ParsedCommand) -> str:
+        try:
+            if cmd.name in {'help', 'start'}:
+                return self._help_text()
+            if cmd.name == 'status':
+                st = self.state.get_state()
+                return (
+                    f"Indigo status\n"
+                    f"dry_run={self.config.dry_run}\n"
+                    f"wallets={len(st.copied_wallets)}\n"
+                    f"positions={len(st.copied_positions)}"
+                )
+            if cmd.name == 'dryrun':
+                return self._cmd_dryrun(cmd.args)
+            if cmd.name == 'bets':
+                return self._cmd_bets()
+            if cmd.name == 'buy':
+                return self._cmd_trade('buy', cmd.args)
+            if cmd.name == 'sell':
+                return self._cmd_trade('sell', cmd.args)
+            if cmd.name == 'exit':
+                return self._cmd_exit(cmd.args)
+            if cmd.name == 'setkey':
+                return self._cmd_setkey(cmd.args)
+            return 'Unknown command. Use /help'
+        except Exception as exc:  # noqa: BLE001
+            logger.exception('Command failed: %s', exc)
+            return f'Command error: {exc}'
+
+    def _help_text(self) -> str:
+        return (
+            'Indigo commands:\n'
+            '/status\n'
+            '/dryrun on|off\n'
+            '/bets\n'
+            '/buy <market_slug> <Yes|No> <amount_usdc>\n'
+            '/sell <market_slug> <Yes|No> <amount_usdc>\n'
+            '/exit <market_slug> [Yes|No]\n'
+            '/setkey <0xPRIVATEKEY>'
+        )
+
+    def _cmd_dryrun(self, args: list[str]) -> str:
+        if not args or args[0].lower() not in {'on', 'off'}:
+            return 'Usage: /dryrun on|off'
+        value = args[0].lower() == 'on'
+        self.trader.set_dry_run(value)
+        self.copy_trader.config.dry_run = value
+        set_dry_run_mode(self.config, value, self.config_path)
+        return f'dry_run set to {value}'
+
+    def _cmd_bets(self) -> str:
+        st = self.state.get_state()
+        if not st.copied_positions:
+            return 'No active bets.'
+        lines = ['Active bets:']
+        for p in st.copied_positions.values():
+            lines.append(
+                f"- {p.market_slug} {p.outcome} size={p.size_usdc:.2f} entry={p.avg_entry_price:.4f} now={p.current_price:.4f} pnl={p.unrealized_pnl:.4f}"
+            )
+        return '\n'.join(lines)
+
+    def _cmd_trade(self, action: str, args: list[str]) -> str:
+        if len(args) < 3:
+            return f'Usage: /{action} <market_slug> <Yes|No> <amount_usdc>'
+        market_slug = args[0]
+        outcome = args[1]
+        amount = float(args[2])
+        res = self.copy_trader.manual_trade(action, market_slug, outcome, amount)
+        return f"ok {action}: {res.get('status', 'submitted')}"
+
+    def _cmd_exit(self, args: list[str]) -> str:
+        if len(args) < 1:
+            return 'Usage: /exit <market_slug> [Yes|No]'
+        market_slug = args[0]
+        outcome = args[1] if len(args) > 1 else 'Yes'
+        res = self.copy_trader.manual_trade('exit', market_slug, outcome, 0.0)
+        return f"ok exit: {res.get('status', 'submitted')}"
+
+    def _cmd_setkey(self, args: list[str]) -> str:
+        if len(args) != 1 or not args[0].startswith('0x'):
+            return 'Usage: /setkey <0xPRIVATEKEY>'
+        key = args[0].strip()
+        save_private_key_to_env(key, self.env_path)
+        self.trader.set_private_key(key)
+        self.config.polymarket_private_key = key
+        return f'private key updated: {mask_key(key)}'
