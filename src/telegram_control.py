@@ -31,6 +31,22 @@ def parse_command_text(text: str) -> ParsedCommand | None:
     parts = text.split()
     name = parts[0][1:].split('@')[0].lower()
     args = parts[1:]
+
+    # Backward compatibility aliases
+    aliases = {
+        'help': 'indigo_help',
+        'start': 'indigo_start',
+        'status': 'indigo_status',
+        'dryrun': 'indigo_dryrun',
+        'bets': 'indigo_bets',
+        'buy': 'indigo_buy',
+        'sell': 'indigo_sell',
+        'exit': 'indigo_exit',
+        'setkey': 'indigo_setkey',
+        'service': 'indigo_service',
+    }
+    name = aliases.get(name, name)
+
     return ParsedCommand(name=name, args=args)
 
 
@@ -52,10 +68,14 @@ class TelegramController:
         self.env_path = env_path
         self.enabled = bool(config.telegram_enabled and config.telegram_bot_token and config.telegram_chat_id)
         self._offset: int | None = None
+        self._commands_registered = False
 
     def poll_once(self) -> None:
         if not self.enabled:
             return
+        if not self._commands_registered:
+            self._register_commands()
+            self._commands_registered = True
         updates = self._get_updates()
         for upd in updates:
             self._offset = upd['update_id'] + 1
@@ -69,6 +89,27 @@ class TelegramController:
                 continue
             response = self._handle_command(parsed)
             self._send_message(response)
+
+    def _register_commands(self) -> None:
+        commands = [
+            {'command': 'indigo_help', 'description': 'List Indigo commands'},
+            {'command': 'indigo_status', 'description': 'Show Indigo bot status'},
+            {'command': 'indigo_dryrun', 'description': 'Toggle dry-run: on/off'},
+            {'command': 'indigo_bets', 'description': 'Show active bets'},
+            {'command': 'indigo_buy', 'description': 'Buy: slug outcome amount'},
+            {'command': 'indigo_sell', 'description': 'Sell: slug outcome amount'},
+            {'command': 'indigo_exit', 'description': 'Exit: slug [outcome]'},
+            {'command': 'indigo_setkey', 'description': 'Set Polymarket key and restart'},
+            {'command': 'indigo_service', 'description': 'Service: start/stop/restart/status'},
+        ]
+        try:
+            requests.post(
+                self._api_url('setMyCommands'),
+                json={'commands': commands},
+                timeout=20,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('Telegram setMyCommands failed: %s', exc)
 
     def _api_url(self, method: str) -> str:
         return f"https://api.telegram.org/bot{self.config.telegram_bot_token}/{method}"

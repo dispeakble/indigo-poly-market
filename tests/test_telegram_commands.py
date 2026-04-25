@@ -32,6 +32,18 @@ def test_parse_indigo_exit_command() -> None:
     assert cmd.args == ['will-trump-win-2028', 'No']
 
 
+def test_parse_non_prefixed_help_alias() -> None:
+    cmd = parse_command_text('/help')
+    assert cmd is not None
+    assert cmd.name == 'indigo_help'
+
+
+def test_parse_non_prefixed_bets_alias() -> None:
+    cmd = parse_command_text('/bets')
+    assert cmd is not None
+    assert cmd.name == 'indigo_bets'
+
+
 def test_parse_non_command_returns_none() -> None:
     assert parse_command_text('hello world') is None
 
